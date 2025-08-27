@@ -1,3 +1,5 @@
+# 08/27/2025 begin webauthn feature.
+
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel

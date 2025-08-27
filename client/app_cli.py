@@ -69,7 +69,19 @@ def sign_stepup(priv_pem: bytes, sub: str, amount: float, nonce: str) -> str:
 
 def set_demo_password(sub: str, password: str):
     r = httpx.post(f"{API}/auth/set-password", json={"sub": sub, "password": password}, timeout=10)
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except httpx.HTTPStatusError:
+        # Try to parse the error message
+        try:
+            detail = r.json().get("detail", "")
+        except Exception:
+            detail = r.text
+        if "Password must be at least 8 characters long" in detail:
+            print(detail)
+            return None
+        print("Error details:", detail)
+        raise
     return r.json()
 
 # New: check if a user has a password set

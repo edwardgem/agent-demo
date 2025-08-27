@@ -25,6 +25,7 @@ ENV/
 # Logs and audit trails
 *.log
 gateway/audit/audit.log
+myWork.txt
 
 # OS cruft
 .DS_Store

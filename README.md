@@ -1,4 +1,4 @@
-# Secure Payment Agent Demo (Python)
+# agent-payment
 
 This demo shows how a human user safely triggers a Payment Agent using:
 

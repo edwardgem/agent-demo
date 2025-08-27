@@ -42,7 +42,12 @@ def set_password_endpoint(req: SetPasswordRequest):
         password_stepup.set_password(req.sub, req.password)
         return {"ok": True}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        msg = str(e)
+        if "at least 8 characters" in msg:
+            msg = "Password must be at least 8 characters long. Please choose a longer password."
+        elif "sub is required" in msg:
+            msg = "Username (sub) is required."
+        raise HTTPException(status_code=400, detail=msg)
 
 @app.post("/agent/payment")
 async def payment(request: Request, body: PaymentRequest,

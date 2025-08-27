@@ -12,10 +12,20 @@ from cryptography.exceptions import InvalidSignature
 
 _pending = {}
 
+
+def _canon_amount(amount: float) -> str:
+    # Always render amounts as 2 decimal places to avoid "5000" vs "5000.0" mismatch
+    return f"{float(amount):.2f}"
+
 def new_challenge(sub: str, amount: float, pubkey_pem: bytes) -> Dict[str, Any]:
     nonce = base64.urlsafe_b64encode(os.urandom(24)).decode().rstrip("=")
-    _pending[nonce] = {"sub": sub, "amount": amount, "exp": int(time.time()) + 180, "pubkey_pem": pubkey_pem.decode()}
-    return {"nonce": nonce, "prompt": f"Confirm payment of {amount} by {sub}"}
+    _pending[nonce] = {
+        "sub": sub,
+        "amount": _canon_amount(amount),          # <- store canonical string
+        "exp": int(time.time()) + 180,            # <- give 2 minutes to respond
+        "pubkey_pem": pubkey_pem.decode()
+    }
+    return {"nonce": nonce, "prompt": f"Confirm payment of {_pending[nonce]['amount']} by {sub}"}
 
 def verify_assertion(nonce: str, signature_b64: str) -> bool:
     entry = _pending.get(nonce)
@@ -25,6 +35,7 @@ def verify_assertion(nonce: str, signature_b64: str) -> bool:
         _pending.pop(nonce, None)
         return False
     pubkey = serialization.load_pem_public_key(entry["pubkey_pem"].encode())
+    # Build the exact same message string we expect the client to sign:
     message = f"stepup:{entry['sub']}:{entry['amount']}:{nonce}".encode()
     try:
         pubkey.verify(base64.urlsafe_b64decode(signature_b64 + "=="), message, ec.ECDSA(hashes.SHA256()))

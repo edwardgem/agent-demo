@@ -101,6 +101,17 @@ def call_payment(token: str, priv_pem: bytes, sub: str, amount: float, currency:
     r = httpx.post(url, json={"amount": amount, "currency": currency, "payee_id": payee_id, "memo": memo}, headers=headers, timeout=20)
     if r.status_code == 401 and r.json().get("error") == "step_up_required":
         data = r.json()
+        if "challenge" not in data and "challenge_error" in data:
+            # Backend could not issue a challenge (e.g., sub not registered). Prompt for sub/password and retry.
+            print("Step-up required, but no registered user. Please enter sub (username):")
+            new_sub = input().strip()
+            print(f"Please enter password for user '{new_sub}':")
+            new_password = getpass.getpass()
+            # Mint new token for new_sub
+            keys = ensure_keys()
+            new_token = mint_token(sub=new_sub, scopes="agent:payment.initiate", public_jwk=keys["public_jwk"])
+            # Recursive retry with new sub/password
+            return call_payment(new_token, keys["private_key_pem"].encode(), sub=new_sub, amount=amount, currency=currency, payee_id=payee_id, memo=memo, password=new_password)
         nonce = data["challenge"]["nonce"]
         # If password is set for sub, always use password step-up
         if use_password_stepup:
@@ -146,29 +157,15 @@ def call_payment(token: str, priv_pem: bytes, sub: str, amount: float, currency:
     else:
         print("Response:", r.status_code, r.json())
 
-def scenario_low(sub: str = None, password: str = None):
-    if not sub:
-        sub = "guest"
+# Remove scenario_low and scenario_high, introduce scenario_payment
+
+def scenario_payment(sub: str = None, password: str = None, amount: float = None):
+    # Do not prompt for sub; just pass None if not provided
+    if amount is None:
+        amount = float(input("Enter payment amount: ").strip())
     keys = ensure_keys()
     token = mint_token(sub=sub, scopes="agent:payment.initiate", public_jwk=keys["public_jwk"])
-    call_payment(token, keys["private_key_pem"].encode(), sub=sub, amount=100, currency="USD", payee_id="vendor-123", memo="Office supplies", password=password)
-
-def scenario_high(sub: str = None, password: str = None):
-    if not sub:
-        sub = input("Enter sub (username): ").strip()
-    keys = ensure_keys()
-    token = mint_token(sub=sub, scopes="agent:payment.initiate", public_jwk=keys["public_jwk"])
-    call_payment(token, keys["private_key_pem"].encode(), sub=sub, amount=5000, currency="USD", payee_id="vendor-456", memo="Laptop purchase", password=password)
-
-# New: high-amount scenario using password step-up
-
-def scenario_high_password(sub: str = None, password: str = None):
-    if not sub:
-        sub = input("Enter sub (username): ").strip()
-    keys = ensure_keys()
-    set_demo_password(sub, password)
-    token = mint_token(sub=sub, scopes="agent:payment.initiate", public_jwk=keys["public_jwk"])
-    call_payment(token, keys["private_key_pem"].encode(), sub=sub, amount=5000, currency="USD", payee_id="vendor-456", memo="Laptop purchase", password=password)
+    call_payment(token, keys["private_key_pem"].encode(), sub=sub, amount=amount, currency="USD", payee_id="vendor-123", memo="Demo payment", password=password)
 
 def scenario_noscope(sub: str = None, password: str = None):
     if not sub:
@@ -205,18 +202,26 @@ def scenario_set_password(sub: str = None, password: str = None):
     res = set_demo_password(sub, password)
     print("Password set:", res)
 
+# Remove CLI entrypoint for scenarios
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("scenario", choices=["low", "high", "high_password", "noscope", "replay", "set_password"])
-    parser.add_argument("--sub", default=None)
-    parser.add_argument("--password", default=None)
+    parser.add_argument("scenario", choices=["payment", "noscope", "replay", "set_password"], help="Scenario to run")
+    parser.add_argument("--amount", nargs="?", type=float, const=None, default=None, help="Payment amount (for 'payment' scenario). If omitted or no value, will prompt.")
+    parser.add_argument("--sub", default=None, help="User sub (username)")
+    parser.add_argument("--password", default=None, help="Password for step-up (if required)")
     args = parser.parse_args()
     if args.scenario == "set_password":
         scenario_set_password(args.sub, args.password)
-    elif args.scenario == "high_password":
-        if not args.password:
-            raise SystemExit("--password is required for high_password scenario")
-        scenario_high_password(args.sub, args.password)
+    elif args.scenario == "payment":
+        amt = args.amount
+        if amt is None:
+            try:
+                amt_input = input("Enter payment amount: ").strip()
+                amt = float(amt_input)
+            except Exception:
+                raise SystemExit("Amount is required for payment scenario.")
+        scenario_payment(args.sub, args.password, amt)
     else:
-        {"low": scenario_low, "high": scenario_high, "noscope": scenario_noscope, "replay": scenario_replay}[args.scenario](args.sub, args.password)
+        scenario_noscope(args.sub, args.password) if args.scenario == "noscope" else scenario_replay(args.sub, args.password)

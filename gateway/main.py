@@ -14,7 +14,7 @@ from agent.payment_worker import execute_payment
 app = FastAPI(title="Payment Agent Gateway (Demo)")
 
 class LoginRequest(BaseModel):
-    sub: str
+    sub: Optional[str] = None
     scopes: str = "agent:payment.initiate"
     public_jwk: Dict[str, Any]
 
@@ -31,7 +31,8 @@ class SetPasswordRequest(BaseModel):
 
 @app.post("/login/mock-oidc")
 def login(req: LoginRequest):
-    token = mint_access_token(sub=req.sub, scopes=req.scopes, public_jwk=req.public_jwk, ttl_seconds=600)
+    sub = req.sub or "guest"
+    token = mint_access_token(sub=sub, scopes=req.scopes, public_jwk=req.public_jwk, ttl_seconds=600)
     return {"access_token": token, "token_type": "Bearer", "expires_in": 600}
 
 # New: demo-only endpoint to set a user's password for step-up
@@ -82,14 +83,15 @@ async def payment(request: Request, body: PaymentRequest,
     # Initialize step-up metadata to avoid UnboundLocalError when not required
     stepup_meta = None
 
-    # --- ENFORCE: sub must be registered in memory for any step-up ---
+    # --- ENFORCE: sub must be registered ONLY if step-up is required or sub is not 'guest' ---
     sub = claims["sub"]
-    # Only allow step-up if sub is registered (has password or is in _creds)
-    if not password_stepup.has_password(sub):
-        # If sub is not in _creds at all, fail
-        if sub not in password_stepup._creds:
-            raise HTTPException(401, detail="sub_not_registered")
-        # If sub is in _creds but has no password, allow webauthn
+    # Only enforce registration for step-up or non-guest users
+    if sub != "guest":
+        if not password_stepup.has_password(sub):
+            # If sub is not in _creds at all, fail
+            if sub not in password_stepup._creds:
+                raise HTTPException(401, detail="sub_not_registered")
+            # If sub is in _creds but has no password, allow webauthn
 
     if decision["result"] == "deny":
         write_audit(actor=claims["sub"], action="payment.initiate", inputs=input_doc, decision=decision)

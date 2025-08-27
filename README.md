@@ -15,7 +15,7 @@ using the client's DPoP private key. In production you'd prompt a real WebAuthn 
 ## Demo scenarios
 
 - Low-risk payment (no step-up): $100 succeeds with scope + DPoP
-- High-risk payment (step-up): $5,000 requires step-up and then succeeds
+- High-risk payment (step-up): $1,000+ requires step-up and then succeeds. >$10,000 exceed Max, reject
 - Replay attempt: copying the token without the DPoP private key fails
 - Scope enforcement: request without `agent:payment.initiate` fails
 
@@ -29,8 +29,10 @@ pip install -r requirements.txt
 uvicorn gateway.main:app --reload --port 8000
 
 # In another terminal:
-python client/app_cli.py low      # $100 (no step-up)
-python client/app_cli.py high     # $5,000 (requires step-up)
-python client/app_cli.py noscope  # missing scope -> 403
-python client/app_cli.py replay   # token replay attempt -> fails
+python client/app_cli.py payment --amount 100      # $100 (no step-up)
+python client/app_cli.py payment --amount 1000     # $1,000 (requires step-up)
+python client/app_cli.py                           # will ask user to enter amount
+python client/app_cli.py noscope                   # missing scope -> 403
+python client/app_cli.py replay                    # token replay attempt -> fails
+python client/app_cli.py set_password --sub user_123 --password pw123    # set and remember sub/password pair
 ```
